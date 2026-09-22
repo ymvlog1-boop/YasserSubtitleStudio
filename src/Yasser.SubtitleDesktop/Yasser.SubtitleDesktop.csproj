@@ -7,11 +7,14 @@
     <AssemblyName>YasserSubtitleStudio</AssemblyName>
     <Product>Yasser Subtitle Studio</Product>
     <AssemblyTitle>Yasser Subtitle Studio — Desktop Preview</AssemblyTitle>
+    <!-- The official upstream SE.ico is fetched from a pinned upstream commit by the build workflow. -->
+    <ApplicationIcon Condition="Exists('Assets/SE.ico')">Assets/SE.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.1.2" />
     <PackageReference Include="Avalonia.Desktop" Version="12.1.2" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.2" />
     <ProjectReference Include="..\Yasser.ResumeCore\Yasser.ResumeCore.csproj" />
+    <Content Include="Assets/SE.ico" Condition="Exists('Assets/SE.ico')" Link="SE.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
