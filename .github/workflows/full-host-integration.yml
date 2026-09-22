@@ -1,0 +1,45 @@
+name: Internal full Subtitle Edit host integration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/build-integrated-host.ps1'
+      - 'src/Yasser.ResumeCore/**'
+      - 'src/Yasser.SubtitleDesktop/**'
+      - 'NOTICE-UPSTREAM.txt'
+      - '.github/workflows/full-host-integration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-original-host:
+    name: Compile original editor with Yasser project menu (not a release)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout Yasser source
+        uses: actions/checkout@v4
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Test resume checkpoints and SRT recovery
+        shell: pwsh
+        run: dotnet run --project tests/Yasser.ResumeCore.SmokeTests/Yasser.ResumeCore.SmokeTests.csproj --configuration Release
+      - name: Test online translation checkpoints with mock provider
+        shell: pwsh
+        run: dotnet run --project tests/Yasser.OnlineTranslation.SmokeTests/Yasser.OnlineTranslation.SmokeTests.csproj --configuration Release
+      - name: Compile full pinned Subtitle Edit original with Yasser project menu
+        shell: pwsh
+        run: ./scripts/build-integrated-host.ps1
+      - name: Verify branded Windows executable and original icon
+        shell: pwsh
+        run: |
+          $exe = 'out/integrated-host-win-x64/YasserSubtitleStudio.exe'
+          if (!(Test-Path $exe)) { throw 'Full host executable missing.' }
+          if (!(Test-Path 'out/integrated-host-source/src/ui/SE.ico')) { throw 'Original Subtitle Edit icon missing.' }
+          if (!(Test-Path 'out/integrated-host-win-x64/UPSTREAM-LICENSE.txt')) { throw 'Upstream license missing.' }
+          Write-Host 'Full upstream host compiles with original icon; no premature release has been published.'
