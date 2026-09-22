@@ -1,4 +1,4 @@
-name: Internal full Subtitle Edit host integration
+name: Yasser Subtitle Studio full Windows build
 
 on:
   push:
@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   verify-original-host:
-    name: Compile original editor with Yasser project menu (not a release)
+    name: Build and verify Yasser Subtitle Studio
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
@@ -35,11 +35,32 @@ jobs:
       - name: Compile full pinned Subtitle Edit original with Yasser project menu
         shell: pwsh
         run: ./scripts/build-integrated-host.ps1
-      - name: Verify original Windows executable, icon and license
+      - name: Verify branded Windows executable, original icon and license
         shell: pwsh
         run: |
-          $exe = 'out/integrated-host-win-x64/SubtitleEdit.exe'
-          if (!(Test-Path $exe)) { throw 'Full host executable missing.' }
+          $exe = 'out/integrated-host-win-x64/YasserSubtitleStudio.exe'
+          if (!(Test-Path $exe)) { throw 'YasserSubtitleStudio.exe missing.' }
+          if (!(Test-Path 'out/integrated-host-win-x64/SubtitleEdit.exe')) { throw 'Original host executable missing.' }
           if (!(Test-Path 'out/integrated-host-source/src/ui/SE.ico')) { throw 'Original Subtitle Edit icon missing.' }
           if (!(Test-Path 'out/integrated-host-win-x64/UPSTREAM-LICENSE.txt')) { throw 'Upstream license missing.' }
-          Write-Host 'Full upstream host compiles with original icon and assembly identity; no premature release has been published.'
+          if (!(Test-Path 'out/integrated-host-win-x64/NOTICE-YASSER-UPSTREAM.txt')) { throw 'Upstream notice missing.' }
+          Write-Host 'Integrated branded Windows package verified.'
+      - name: Startup smoke test
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path 'out/integrated-host-win-x64/YasserSubtitleStudio.exe').Path
+          $p = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 6
+          if ($p.HasExited) {
+            if ($p.ExitCode -ne 0) { throw "Yasser Subtitle Studio exited during startup with code $($p.ExitCode)." }
+          } else {
+            Stop-Process -Id $p.Id -Force
+          }
+          Write-Host 'Yasser Subtitle Studio started successfully.'
+      - name: Upload final Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: YasserSubtitleStudio-FINAL-win-x64
+          path: out/integrated-host-win-x64/
+          if-no-files-found: error
+          retention-days: 90
