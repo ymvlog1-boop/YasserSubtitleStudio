@@ -301,6 +301,7 @@ internal static class YasserIntegratedMenu
 [System.IO.File]::WriteAllText((Join-Path $integrationDir 'YasserIntegratedMenu.cs'), $menuSource, [System.Text.UTF8Encoding]::new($false))
 $projectFile = Join-Path $upstreamUI 'UI.csproj'
 # Avalonia XAML explicitly references assembly=SubtitleEdit; preserve the original assembly identity.
+Replace-Once $projectFile '<AssemblyName>SubtitleEdit</AssemblyName>' ('<AssemblyName>SubtitleEdit</AssemblyName>' + "`n`t`t<Product>Yasser Subtitle Studio</Product>" + "`n`t`t<AssemblyTitle>Yasser Subtitle Studio</AssemblyTitle>")
 Replace-Once $projectFile '<ProjectReference Include="..\libse\LibSE.csproj" />' ('<ProjectReference Include="..\libse\LibSE.csproj" />' + "`n`t  <ProjectReference Include=`"..\Yasser.ResumeCore\Yasser.ResumeCore.csproj`" />")
 $viewFile = Join-Path $upstreamUI 'Features/Main/MainView.cs'
 Replace-Once $viewFile 'InitMenu.Make(_vm);' ('InitMenu.Make(_vm);' + "`n        YasserIntegratedMenu.Add(_vm.Menu, _vm);")
@@ -308,6 +309,8 @@ Write-Host "Building original Subtitle Edit revision $actual with original icon 
 & dotnet publish $projectFile --configuration Release --runtime $Runtime --self-contained true --output $publish
 Require ($LASTEXITCODE -eq 0) 'Original editor host build failed.'
 Require (Test-Path (Join-Path $publish 'SubtitleEdit.exe')) 'Integrated host EXE missing.'
+Copy-Item -LiteralPath (Join-Path $publish 'SubtitleEdit.exe') -Destination (Join-Path $publish 'YasserSubtitleStudio.exe') -Force
+Require (Test-Path (Join-Path $publish 'YasserSubtitleStudio.exe')) 'Branded Yasser executable missing.'
 Copy-Item -LiteralPath (Join-Path $working 'LICENSE') -Destination (Join-Path $publish 'UPSTREAM-LICENSE.txt')
 Copy-Item -LiteralPath (Join-Path $repository 'NOTICE-UPSTREAM.txt') -Destination (Join-Path $publish 'NOTICE-YASSER-UPSTREAM.txt')
-Write-Host 'INTERNAL PINNED HOST BUILD PASSED; not a final release.'
+Write-Host 'PINNED FULL HOST BUILD PASSED WITH YASSER BRANDING.'
