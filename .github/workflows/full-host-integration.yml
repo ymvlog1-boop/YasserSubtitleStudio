@@ -35,11 +35,11 @@ jobs:
       - name: Compile full pinned Subtitle Edit original with Yasser project menu
         shell: pwsh
         run: ./scripts/build-integrated-host.ps1
-      - name: Verify branded Windows executable and original icon
+      - name: Verify original Windows executable, icon and license
         shell: pwsh
         run: |
-          $exe = 'out/integrated-host-win-x64/YasserSubtitleStudio.exe'
+          $exe = 'out/integrated-host-win-x64/SubtitleEdit.exe'
           if (!(Test-Path $exe)) { throw 'Full host executable missing.' }
           if (!(Test-Path 'out/integrated-host-source/src/ui/SE.ico')) { throw 'Original Subtitle Edit icon missing.' }
           if (!(Test-Path 'out/integrated-host-win-x64/UPSTREAM-LICENSE.txt')) { throw 'Upstream license missing.' }
-          Write-Host 'Full upstream host compiles with original icon; no premature release has been published.'
+          Write-Host 'Full upstream host compiles with original icon and assembly identity; no premature release has been published.'
