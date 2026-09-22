@@ -44,7 +44,7 @@ using Avalonia;
 foreach ($name in @('MainWindow.cs', 'AutomaticToolSetup.cs')) {
     $sourceFile = Join-Path $repository "src/Yasser.SubtitleDesktop/$name"
     $targetFile = Join-Path $integrationDir $name
-    # Local imports only: GLOBAL imports broke original Subtitle Edit Timer and Vector types.
+    # Local imports only: GLOBAL imports break original Subtitle Edit Timer and Vector types.
     [System.IO.File]::WriteAllText($targetFile, $localUsings + "`n" + [System.IO.File]::ReadAllText($sourceFile), [System.Text.UTF8Encoding]::new($false))
 }
 # Companion window must not take over the original Subtitle Edit main editor.
@@ -96,14 +96,14 @@ internal static class YasserIntegratedMenu
 '@
 [System.IO.File]::WriteAllText((Join-Path $integrationDir 'YasserIntegratedMenu.cs'), $menuSource, [System.Text.UTF8Encoding]::new($false))
 $projectFile = Join-Path $upstreamUI 'UI.csproj'
-Replace-Once $projectFile '<AssemblyName>SubtitleEdit</AssemblyName>' '<AssemblyName>YasserSubtitleStudio</AssemblyName>'
+# Avalonia XAML explicitly references assembly=SubtitleEdit; preserve the original assembly identity.
 Replace-Once $projectFile '<ProjectReference Include="..\libse\LibSE.csproj" />' ('<ProjectReference Include="..\libse\LibSE.csproj" />' + "`n`t  <ProjectReference Include=`"..\Yasser.ResumeCore\Yasser.ResumeCore.csproj`" />")
 $viewFile = Join-Path $upstreamUI 'Features/Main/MainView.cs'
 Replace-Once $viewFile 'InitMenu.Make(_vm);' ('InitMenu.Make(_vm);' + "`n        YasserIntegratedMenu.Add(_vm.Menu);")
 Write-Host "Building original Subtitle Edit revision $actual with original icon and Yasser project menu."
 & dotnet publish $projectFile --configuration Release --runtime $Runtime --self-contained true --output $publish
 Require ($LASTEXITCODE -eq 0) 'Original editor host build failed.'
-Require (Test-Path (Join-Path $publish 'YasserSubtitleStudio.exe')) 'Integrated host EXE missing.'
+Require (Test-Path (Join-Path $publish 'SubtitleEdit.exe')) 'Integrated host EXE missing.'
 Copy-Item -LiteralPath (Join-Path $working 'LICENSE') -Destination (Join-Path $publish 'UPSTREAM-LICENSE.txt')
 Copy-Item -LiteralPath (Join-Path $repository 'NOTICE-UPSTREAM.txt') -Destination (Join-Path $publish 'NOTICE-YASSER-UPSTREAM.txt')
 Write-Host 'INTERNAL PINNED HOST BUILD PASSED; not a final release.'
