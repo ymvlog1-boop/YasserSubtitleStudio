@@ -38,6 +38,7 @@ public sealed class SubtitleProject
     public string Name { get; set; } = "Untitled";
     public string VideoPath { get; set; } = "";
     public string SubtitlePath { get; set; } = "";
+    public string TranslationLanguageCode { get; set; } = "ar";
     public long VideoPositionMilliseconds { get; set; }
     public Guid? SelectedCueId { get; set; }
     public DateTimeOffset UpdatedUtc { get; set; } = DateTimeOffset.UtcNow;
