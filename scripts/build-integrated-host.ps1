@@ -1,5 +1,4 @@
-# INTERNAL source integration: original Subtitle Edit UI + Yasser resumable project window.
-# This produces no final release and never modifies the user's existing projects.
+# INTERNAL integration: complete original Subtitle Edit UI plus Yasser resumable project window.
 param([string]$UpstreamCommit = '7398eb9d63769753960bb25326d4bae53971b55b', [string]$Runtime = 'win-x64')
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -33,18 +32,21 @@ Copy-Item -LiteralPath (Join-Path $repository 'src/Yasser.ResumeCore') -Destinat
 $integrationDir = Join-Path $upstreamUI 'YasserIntegrated'
 New-Item -ItemType Directory -Force -Path $integrationDir | Out-Null
 foreach ($name in @('MainWindow.cs', 'AutomaticToolSetup.cs')) {
-    Copy-Item -LiteralPath (Join-Path $repository "src/Yasser.SubtitleDesktop/$name") -Destination (Join-Path $integrationDir $name)
+    $sourceFile = Join-Path $repository "src/Yasser.SubtitleDesktop/$name"
+    $targetFile = Join-Path $integrationDir $name
+    $source = [System.IO.File]::ReadAllText($sourceFile)
+    # This import belongs only to Yasser source. A global import breaks native SE Timer references.
+    [System.IO.File]::WriteAllText($targetFile, "using System.Threading;`n" + $source, [System.Text.UTF8Encoding]::new($false))
 }
-# Crucial: companion windows must NOT replace the original Subtitle Edit desktop MainWindow.
+# The original Subtitle Edit editor must remain the desktop application's MainWindow.
 $setupFile = Join-Path $integrationDir 'AutomaticToolSetup.cs'
-Replace-Once $setupFile 'if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)' '// Retain the original editor as the app MainWindow.'
+Replace-Once $setupFile 'if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)' '// Keep the original editor as the app MainWindow.'
 Replace-Once $setupFile 'desktop.MainWindow = main;' '// Do not replace the owner window.'
 $globalUsings = @'
 global using System;
 global using System.Collections.Generic;
 global using System.IO;
 global using System.Linq;
-global using System.Threading;
 global using System.Threading.Tasks;
 global using Avalonia;
 '@
@@ -55,7 +57,7 @@ using Yasser.SubtitleDesktop;
 
 namespace Nikse.SubtitleEdit.Features.Main;
 
-/// <summary>Adds resumable projects without removing any native Subtitle Edit menus.</summary>
+/// <summary>Adds resumable projects without removing native Subtitle Edit tools.</summary>
 internal static class YasserIntegratedMenu
 {
     internal static void Add(Menu hostMenu)
@@ -99,10 +101,10 @@ Replace-Once $projectFile '<AssemblyName>SubtitleEdit</AssemblyName>' '<Assembly
 Replace-Once $projectFile '<ProjectReference Include="..\libse\LibSE.csproj" />' ('<ProjectReference Include="..\libse\LibSE.csproj" />' + "`n`t  <ProjectReference Include=`"..\Yasser.ResumeCore\Yasser.ResumeCore.csproj`" />")
 $viewFile = Join-Path $upstreamUI 'Features/Main/MainView.cs'
 Replace-Once $viewFile 'InitMenu.Make(_vm);' ('InitMenu.Make(_vm);' + "`n        YasserIntegratedMenu.Add(_vm.Menu);")
-Write-Host "Compiling Subtitle Edit revision $actual with its original icon and Yasser checkpoint project window."
+Write-Host "Compiling original Subtitle Edit revision $actual with its original icon and Yasser project window."
 & dotnet publish $projectFile --configuration Release --runtime $Runtime --self-contained true --output $publish
 Require ($LASTEXITCODE -eq 0) 'Original editor host build failed.'
 Require (Test-Path (Join-Path $publish 'YasserSubtitleStudio.exe')) 'Expected integrated host EXE not found.'
 Copy-Item -LiteralPath (Join-Path $working 'LICENSE') -Destination (Join-Path $publish 'UPSTREAM-LICENSE.txt')
 Copy-Item -LiteralPath (Join-Path $repository 'NOTICE-UPSTREAM.txt') -Destination (Join-Path $publish 'NOTICE-YASSER-UPSTREAM.txt')
-Write-Host 'INTERNAL PINNED HOST BUILD PASSED; this is not the final integrated release.'
+Write-Host 'INTERNAL PINNED HOST BUILD PASSED; not a final release.'
