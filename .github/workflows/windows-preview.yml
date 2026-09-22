@@ -1,0 +1,45 @@
+name: Build and test Windows desktop preview
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - '.github/workflows/windows-preview.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - '.github/workflows/windows-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-preview:
+    name: Smoke tests and Windows preview
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Run core smoke tests
+        shell: pwsh
+        run: dotnet run --project tests/Yasser.ResumeCore.SmokeTests/Yasser.ResumeCore.SmokeTests.csproj --configuration Release
+      - name: Publish standalone Windows desktop preview
+        shell: pwsh
+        run: dotnet publish src/Yasser.SubtitleDesktop/Yasser.SubtitleDesktop.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true --output out/win-x64-preview
+      - name: Upload preview build (NOT integrated Subtitle Edit)
+        uses: actions/upload-artifact@v4
+        with:
+          name: YasserSubtitleStudio-standalone-preview-win-x64
+          path: out/win-x64-preview/
+          if-no-files-found: error
+          retention-days: 30
