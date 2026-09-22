@@ -35,14 +35,21 @@ public sealed class OnlineTranslation
         };
     }
 
-    public async Task<SubtitleProject> TranslateToArabicAsync(string projectFile,
+    public Task<SubtitleProject> TranslateToArabicAsync(string projectFile,
+        Action<int, int>? progress = null, CancellationToken cancellationToken = default) =>
+        TranslateAsync(projectFile, "ar", progress, cancellationToken);
+
+    public async Task<SubtitleProject> TranslateAsync(string projectFile, string targetLanguage,
         Action<int, int>? progress = null, CancellationToken cancellationToken = default)
     {
         if (!File.Exists(projectFile)) throw new FileNotFoundException("افتح مشروع الترجمة المحفوظ أولاً.", projectFile);
         var project = _store.Load(projectFile);
         if (project.Cues.Count == 0) throw new InvalidOperationException("حوّل الكلام إلى نص أولاً، ثم اضغط الترجمة.");
-        const string target = "ar";
-        const string fingerprint = "mymemory-public-api:v1:target=ar";
+        string target = NormalizeLanguage(targetLanguage);
+        if (target.Length == 0) throw new InvalidOperationException("اختر لغة ترجمة صالحة.");
+        string fingerprint = "mymemory-public-api:v2:target=" + target;
+        project.TranslationLanguageCode = target;
+        _store.Save(projectFile, project);
         var tasks = _resume.QueueTranslation(projectFile, project, fingerprint);
         int completed = 0;
         progress?.Invoke(completed, tasks.Count);
