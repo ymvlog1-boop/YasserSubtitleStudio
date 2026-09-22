@@ -55,18 +55,35 @@ try
         };
     })))
     {
-        await new OnlineTranslation(store, client).TranslateToArabicAsync(path);
+        await new OnlineTranslation(store, client).TranslateAsync(path, "en");
         Check(resumedRequests == 2, "Resume sends only the two unfinished cues");
         await new OnlineTranslation(store, client).TranslateToArabicAsync(path);
         Check(resumedRequests == 2, "Fully completed translation makes no additional network requests");
     }
-    string srt = Path.Combine(dir, "arabic.srt");
+    int englishRequests = 0;
+    using (var client = new HttpClient(new FakeHandler(request =>
+    {
+        englishRequests++;
+        Check(request.RequestUri!.Query.Contains("langpair=tr%7Cen", StringComparison.OrdinalIgnoreCase),
+            "Changing target language sends the selected target code");
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("{\"responseStatus\":200,\"responseData\":{\"translatedText\":\"English translation\"}}", Encoding.UTF8, "application/json")
+        };
+    })))
+    {
+        await new OnlineTranslation(store, client).TranslateAsync(path, "en");
+    }
+    Check(englishRequests == 3 && store.Load(path).TranslationLanguageCode == "en",
+        "Changing target language invalidates generated translations and persists the new target");
+
+    string srt = Path.Combine(dir, "translated.srt");
     new ProjectService(store).ExportPartial(path, srt);
-    Check(SrtCodec.Import(File.ReadAllText(srt)).Count == 3, "Arabic SRT export retains all translated subtitle timings");
+    Check(SrtCodec.Import(File.ReadAllText(srt)).Count == 3, "Translated SRT export retains all subtitle timings");
     bool refusedOverwrite = false;
     try { new ProjectService(store).ExportPartial(path, path); }
     catch (InvalidOperationException) { refusedOverwrite = true; }
-    Check(refusedOverwrite, "Arabic export cannot overwrite the project file");
+    Check(refusedOverwrite, "Translated export cannot overwrite the project file");
     var edited = store.Load(path);
     new ResumeEngine(store).EditCue(path, edited, edited.Cues[0].Id, "تصحيح بشري");
     using (var client = new HttpClient(new FakeHandler(_ => throw new Exception("Manual edit was resent"))))
