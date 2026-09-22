@@ -1,0 +1,8 @@
+**/bin/
+**/obj/
+out/
+*.user
+*.yssproj
+*.yssproj.bak
+*.yssproj.tmp-*
+*.partial.srt
