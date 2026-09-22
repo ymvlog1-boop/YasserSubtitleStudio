@@ -55,7 +55,7 @@ try
         };
     })))
     {
-        await new OnlineTranslation(store, client).TranslateAsync(path, "en");
+        await new OnlineTranslation(store, client).TranslateToArabicAsync(path);
         Check(resumedRequests == 2, "Resume sends only the two unfinished cues");
         await new OnlineTranslation(store, client).TranslateToArabicAsync(path);
         Check(resumedRequests == 2, "Fully completed translation makes no additional network requests");
@@ -88,7 +88,7 @@ try
     new ResumeEngine(store).EditCue(path, edited, edited.Cues[0].Id, "تصحيح بشري");
     using (var client = new HttpClient(new FakeHandler(_ => throw new Exception("Manual edit was resent"))))
     {
-        await new OnlineTranslation(store, client).TranslateToArabicAsync(path);
+        await new OnlineTranslation(store, client).TranslateAsync(path, "en");
         Check(store.Load(path).Cues[0].Translation == "تصحيح بشري", "Manual subtitle correction is preserved without retranslating it");
     }
     Console.WriteLine("ALL ONLINE TRANSLATION SMOKE TESTS PASSED");
