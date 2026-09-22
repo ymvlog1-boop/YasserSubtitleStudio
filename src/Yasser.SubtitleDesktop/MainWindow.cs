@@ -17,10 +17,11 @@ public sealed class MainWindow : Window
     private readonly TextBox _ffmpeg = new() { Text = "ffmpeg" };
     private readonly TextBox _ffprobe = new() { Text = "ffprobe" };
     private readonly Button _start = new() { Content = "تحويل الكلام إلى نص / استئناف", MinWidth = 220 };
-    private readonly Button _translate = new() { Content = "ترجمة النص إلى العربية / استئناف", IsEnabled = false };
+    private readonly ComboBox _targetLanguage = new() { ItemsSource = new[] { "العربية | ar", "English | en", "Türkçe | tr", "فارسی | fa", "Kurdî | ku", "Français | fr", "Deutsch | de", "Español | es", "Italiano | it", "Русский | ru", "Português | pt", "日本語 | ja", "한국어 | ko", "中文 | zh-CN" }, SelectedIndex = 0, MinWidth = 180 };
+    private readonly Button _translate = new() { Content = "ترجمة النص / استئناف", IsEnabled = false };
     private readonly Button _cancel = new() { Content = "إيقاف بعد حفظ المقاطع المكتملة", IsEnabled = false };
     private readonly Button _export = new() { Content = "تصدير النص الأصلي SRT", IsEnabled = false };
-    private readonly Button _exportArabic = new() { Content = "تصدير الترجمة العربية SRT", IsEnabled = false };
+    private readonly Button _exportArabic = new() { Content = "تصدير الترجمة SRT", IsEnabled = false };
     private readonly TextBlock _message = new() { Text = "اختر فيديو لبدء تحويل الكلام إلى نص." };
     private readonly ListBox _captions = new() { Height = 240 };
     private readonly ProjectStore _store = new();
@@ -35,7 +36,7 @@ public sealed class MainWindow : Window
         Width = 1010; Height = 790; MinWidth = 650; MinHeight = 580;
         var body = new StackPanel { Spacing = 10, Margin = new Thickness(18) };
         body.Children.Add(new TextBlock { Text = "Yasser Subtitle Studio", FontSize = 27 });
-        body.Children.Add(new TextBlock { Text = "تحويل صوت الفيديو إلى نص بلغته الأصلية، وترجمة السطور إلى العربية مع الحفظ والاستئناف." });
+        body.Children.Add(new TextBlock { Text = "تحويل صوت الفيديو إلى نص بلغته الأصلية، ثم ترجمته إلى اللغة التي تختارها مع الحفظ والاستئناف." });
         body.Children.Add(new TextBlock { Text = "الفيديو / الصوت" });
         body.Children.Add(PickRow(_media, "اختيار فيديو", async () => await ChooseFileAsync(_media, "اختيار فيديو أو صوت", isMedia: true)));
         body.Children.Add(new TextBlock { Text = "مشروعك المحفوظ (افتحه لاحقاً للاستئناف)" });
@@ -51,16 +52,18 @@ public sealed class MainWindow : Window
         var commands = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
         commands.Children.Add(_start); commands.Children.Add(_cancel); commands.Children.Add(_export);
         body.Children.Add(commands);
+        body.Children.Add(new TextBlock { Text = "لغة الترجمة" });
+        body.Children.Add(_targetLanguage);
         var translations = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
         translations.Children.Add(_translate); translations.Children.Add(_exportArabic);
         body.Children.Add(translations);
         body.Children.Add(new TextBlock
         {
-            Text = "الترجمة العربية تستخدم الإنترنت وخدمة MyMemory المجانية: يُرسل نص كل سطر فقط إلى جهة خارجية، وليس الفيديو أو الصوت. قد تنتهي الحصة المجانية. لا تضغط زر الترجمة إذا كانت النصوص سرية.",
+            Text = "الترجمة تستخدم الإنترنت وخدمة MyMemory المجانية: يُرسل نص كل سطر فقط إلى جهة خارجية، وليس الفيديو أو الصوت. قد تنتهي الحصة المجانية. لا تضغط زر الترجمة إذا كانت النصوص سرية.",
             TextWrapping = Avalonia.Media.TextWrapping.Wrap
         });
         body.Children.Add(_message);
-        body.Children.Add(new TextBlock { Text = "السطور المحفوظة — النص الأصلي والترجمة العربية إن وُجدت" });
+        body.Children.Add(new TextBlock { Text = "السطور المحفوظة — النص الأصلي والترجمة إن وُجدت" });
         body.Children.Add(_captions);
         body.Children.Add(new TextBlock { Text = "ملاحظة: تحديد لغة الكلام تقديري، وقد يخطئ مع اللهجات أو المقاطع القصيرة. يمكن تصدير النص الأصلي دون ترجمة." });
         Content = new ScrollViewer { Content = body, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto };
@@ -123,6 +126,7 @@ public sealed class MainWindow : Window
         {
             var saved = _store.Load(file);
             _media.Text = saved.VideoPath;
+            SelectTargetLanguage(saved.TranslationLanguageCode);
             int transcribed = saved.Work.Count(w => w.Stage == WorkStage.Transcription && w.Status == WorkStatus.Completed);
             int translated = saved.Cues.Count(c => !string.IsNullOrWhiteSpace(c.Translation));
             _message.Text = $"تم فتح {saved.Name} — مقاطع الصوت المكتملة: {transcribed} — السطور المترجمة: {translated} / {saved.Cues.Count}.";
@@ -144,7 +148,7 @@ public sealed class MainWindow : Window
     {
         _captions.ItemsSource = project.Cues.OrderBy(c => c.StartMilliseconds).Select(c =>
             $"{TimeLabel(c.StartMilliseconds)} [{c.SourceLanguageCode ?? "?"}] {c.SourceText}" +
-            (string.IsNullOrWhiteSpace(c.Translation) ? "" : "\n   العربية: " + c.Translation)).ToArray();
+            (string.IsNullOrWhiteSpace(c.Translation) ? "" : "\n   الترجمة: " + c.Translation)).ToArray();
     }
 
     private async Task StartAsync()
@@ -188,7 +192,7 @@ public sealed class MainWindow : Window
                     catch (IOException) { /* Refresh on next checkpoint. */ }
                 }), token);
             RefreshCaptions(result);
-            _message.Text = $"اكتمل التفريغ. عدد السطور: {result.Cues.Count}. اضغط ترجمة النص إلى العربية إن رغبت.";
+            _message.Text = $"اكتمل التفريغ. عدد السطور: {result.Cues.Count}. اختر لغة الترجمة واضغط زر الترجمة.";
         }
         catch (OperationCanceledException) { _message.Text = "تم الإيقاف، والمقاطع المكتملة محفوظة للاستئناف."; }
         catch (Exception ex) { _message.Text = "تعذر إكمال التفريغ: " + ex.Message; }
@@ -212,9 +216,10 @@ public sealed class MainWindow : Window
         try
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(35) };
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("YasserSubtitleStudio/0.4");
-            _message.Text = "جاري ترجمة النصوص للعربية عبر الإنترنت وحفظ كل سطر فور اكتماله...";
-            var updated = await new OnlineTranslation(_store, http).TranslateToArabicAsync(path,
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("YasserSubtitleStudio/1.0");
+            string target = GetSelectedTargetLanguage();
+            _message.Text = "جاري ترجمة النصوص إلى " + target + " عبر الإنترنت وحفظ كل سطر فور اكتماله...";
+            var updated = await new OnlineTranslation(_store, http).TranslateAsync(path, target,
                 (done, total) => Dispatcher.UIThread.Post(() =>
                 {
                     _message.Text = $"تم حفظ {done} من {total} سطور تحتاج ترجمة. يمكنك الإيقاف والاستئناف.";
@@ -222,7 +227,7 @@ public sealed class MainWindow : Window
                     catch (IOException) { /* Refresh on next checkpoint. */ }
                 }), _running.Token);
             RefreshCaptions(updated);
-            _message.Text = "اكتملت ترجمة السطور المتاحة إلى العربية. يمكنك تصدير ملف SRT العربي.";
+            _message.Text = "اكتملت ترجمة السطور المتاحة. يمكنك تصدير ملف SRT المترجم.";
         }
         catch (OperationCanceledException) { _message.Text = "توقفت الترجمة، والسطور المكتملة محفوظة. اضغط الترجمة لاحقاً لاستئناف البقية."; }
         catch (Exception ex) { _message.Text = "توقفت الترجمة: " + ex.Message + " — السطور المكتملة محفوظة؛ يمكنك الاستئناف."; }
@@ -241,8 +246,8 @@ public sealed class MainWindow : Window
         if (!File.Exists(projectFile)) { _message.Text = "افتح المشروع المحفوظ أولاً."; return; }
         var destination = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Title = arabic ? "تصدير الترجمة العربية الحالية بصيغة SRT" : "حفظ النص الأصلي بصيغة SRT",
-            SuggestedFileName = Path.GetFileNameWithoutExtension(projectFile) + (arabic ? ".ar.partial.srt" : ".original.partial.srt"),
+            Title = arabic ? "تصدير الترجمة الحالية بصيغة SRT" : "حفظ النص الأصلي بصيغة SRT",
+            SuggestedFileName = Path.GetFileNameWithoutExtension(projectFile) + (arabic ? "." + _store.Load(projectFile).TranslationLanguageCode + ".partial.srt" : ".original.partial.srt"),
             DefaultExtension = "srt"
         });
         if (destination is null || !destination.Path.IsFile) return;
