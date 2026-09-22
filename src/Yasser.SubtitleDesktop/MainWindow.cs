@@ -142,6 +142,34 @@ public sealed class MainWindow : Window
         }
     }
 
+    private string GetSelectedTargetLanguage()
+    {
+        string value = _targetLanguage.SelectedItem?.ToString() ?? "العربية | ar";
+        int separator = value.LastIndexOf('|');
+        return separator >= 0 ? value[(separator + 1)..].Trim() : value.Trim();
+    }
+
+    private void SelectTargetLanguage(string? code)
+    {
+        string target = OnlineTranslation.NormalizeLanguage(code);
+        if (target.Length == 0) target = "ar";
+        int index = 0;
+        if (_targetLanguage.ItemsSource is System.Collections.IEnumerable items)
+        {
+            foreach (var item in items)
+            {
+                string value = item?.ToString() ?? string.Empty;
+                if (value.EndsWith("| " + target, StringComparison.OrdinalIgnoreCase))
+                {
+                    _targetLanguage.SelectedIndex = index;
+                    return;
+                }
+                index++;
+            }
+        }
+        _targetLanguage.SelectedIndex = 0;
+    }
+
     private static string TimeLabel(long milliseconds) => TimeSpan.FromMilliseconds(milliseconds).ToString(@"hh\:mm\:ss");
 
     private void RefreshCaptions(SubtitleProject project)
