@@ -1,4 +1,4 @@
-# INTERNAL integration: complete original Subtitle Edit UI plus Yasser resumable project window.
+# INTERNAL integration: original Subtitle Edit main editor plus Yasser resumable project tools.
 param([string]$UpstreamCommit = '7398eb9d63769753960bb25326d4bae53971b55b', [string]$Runtime = 'win-x64')
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -25,39 +25,38 @@ Require ($LASTEXITCODE -eq 0) 'Could not fetch pinned original Subtitle Edit rev
 & git -C $working checkout --quiet --detach FETCH_HEAD
 Require ($LASTEXITCODE -eq 0) 'Could not check out upstream source.'
 $actual = (& git -C $working rev-parse HEAD).Trim()
-Require ($actual -eq $UpstreamCommit) 'Upstream source SHA did not match pinned revision.'
+Require ($actual -eq $UpstreamCommit) 'Upstream SHA did not match pinned revision.'
 $upstreamUI = Join-Path $working 'src/ui'
-Require (Test-Path (Join-Path $upstreamUI 'UI.csproj')) 'Original Subtitle Edit UI project is missing.'
+Require (Test-Path (Join-Path $upstreamUI 'UI.csproj')) 'Original Subtitle Edit UI project missing.'
 Copy-Item -LiteralPath (Join-Path $repository 'src/Yasser.ResumeCore') -Destination (Join-Path $working 'src/Yasser.ResumeCore') -Recurse
 $integrationDir = Join-Path $upstreamUI 'YasserIntegrated'
 New-Item -ItemType Directory -Force -Path $integrationDir | Out-Null
+$localUsings = @'
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
+using Avalonia;
+'@
 foreach ($name in @('MainWindow.cs', 'AutomaticToolSetup.cs')) {
     $sourceFile = Join-Path $repository "src/Yasser.SubtitleDesktop/$name"
     $targetFile = Join-Path $integrationDir $name
-    $source = [System.IO.File]::ReadAllText($sourceFile)
-    # This import belongs only to Yasser source. A global import breaks native SE Timer references.
-    [System.IO.File]::WriteAllText($targetFile, "using System.Threading;`n" + $source, [System.Text.UTF8Encoding]::new($false))
+    # Local imports only: GLOBAL imports broke original Subtitle Edit Timer and Vector types.
+    [System.IO.File]::WriteAllText($targetFile, $localUsings + "`n" + [System.IO.File]::ReadAllText($sourceFile), [System.Text.UTF8Encoding]::new($false))
 }
-# The original Subtitle Edit editor must remain the desktop application's MainWindow.
+# Companion window must not take over the original Subtitle Edit main editor.
 $setupFile = Join-Path $integrationDir 'AutomaticToolSetup.cs'
-Replace-Once $setupFile 'if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)' '// Keep the original editor as the app MainWindow.'
-Replace-Once $setupFile 'desktop.MainWindow = main;' '// Do not replace the owner window.'
-$globalUsings = @'
-global using System;
-global using System.Collections.Generic;
-global using System.IO;
-global using System.Linq;
-global using System.Threading.Tasks;
-global using Avalonia;
-'@
-[System.IO.File]::WriteAllText((Join-Path $integrationDir 'YasserGlobalUsings.cs'), $globalUsings, [System.Text.UTF8Encoding]::new($false))
+Replace-Once $setupFile 'if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)' '// Keep original editor as application MainWindow.'
+Replace-Once $setupFile 'desktop.MainWindow = main;' '// Keep original editor window as owner.'
 $menuSource = @'
 using Avalonia.Controls;
 using Yasser.SubtitleDesktop;
 
 namespace Nikse.SubtitleEdit.Features.Main;
 
-/// <summary>Adds resumable projects without removing native Subtitle Edit tools.</summary>
 internal static class YasserIntegratedMenu
 {
     internal static void Add(Menu hostMenu)
@@ -101,10 +100,10 @@ Replace-Once $projectFile '<AssemblyName>SubtitleEdit</AssemblyName>' '<Assembly
 Replace-Once $projectFile '<ProjectReference Include="..\libse\LibSE.csproj" />' ('<ProjectReference Include="..\libse\LibSE.csproj" />' + "`n`t  <ProjectReference Include=`"..\Yasser.ResumeCore\Yasser.ResumeCore.csproj`" />")
 $viewFile = Join-Path $upstreamUI 'Features/Main/MainView.cs'
 Replace-Once $viewFile 'InitMenu.Make(_vm);' ('InitMenu.Make(_vm);' + "`n        YasserIntegratedMenu.Add(_vm.Menu);")
-Write-Host "Compiling original Subtitle Edit revision $actual with its original icon and Yasser project window."
+Write-Host "Building original Subtitle Edit revision $actual with original icon and Yasser project menu."
 & dotnet publish $projectFile --configuration Release --runtime $Runtime --self-contained true --output $publish
 Require ($LASTEXITCODE -eq 0) 'Original editor host build failed.'
-Require (Test-Path (Join-Path $publish 'YasserSubtitleStudio.exe')) 'Expected integrated host EXE not found.'
+Require (Test-Path (Join-Path $publish 'YasserSubtitleStudio.exe')) 'Integrated host EXE missing.'
 Copy-Item -LiteralPath (Join-Path $working 'LICENSE') -Destination (Join-Path $publish 'UPSTREAM-LICENSE.txt')
 Copy-Item -LiteralPath (Join-Path $repository 'NOTICE-UPSTREAM.txt') -Destination (Join-Path $publish 'NOTICE-YASSER-UPSTREAM.txt')
 Write-Host 'INTERNAL PINNED HOST BUILD PASSED; not a final release.'
