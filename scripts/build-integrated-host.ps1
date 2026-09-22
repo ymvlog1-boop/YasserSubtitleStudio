@@ -51,6 +51,192 @@ foreach ($name in @('MainWindow.cs', 'AutomaticToolSetup.cs')) {
 $setupFile = Join-Path $integrationDir 'AutomaticToolSetup.cs'
 Replace-Once $setupFile 'if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)' '// Keep original editor as application MainWindow.'
 Replace-Once $setupFile 'desktop.MainWindow = main;' '// Keep original editor window as owner.'
+$bridgeSource = @'
+using System;
+using System.Collections;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
+using Nikse.SubtitleEdit.Features.Main;
+using Yasser.ResumeCore;
+
+namespace Nikse.SubtitleEdit.Features.Main;
+
+internal static class YasserNativeBridge
+{
+    private static readonly ProjectStore Store = new();
+
+    internal static string SyncCurrentEditor(MainViewModel vm)
+    {
+        string video = GetString(vm, "VideoFileName", "VideoFile", "CurrentVideoFileName");
+        string subtitle = GetString(vm, "SubtitleFileName", "FileName", "CurrentFileName");
+        string projectPath = GetProjectPath(video, subtitle);
+        SubtitleProject project;
+        if (File.Exists(projectPath))
+        {
+            project = Store.Load(projectPath);
+        }
+        else
+        {
+            project = new SubtitleProject
+            {
+                Name = Path.GetFileNameWithoutExtension(video.Length > 0 ? video : (subtitle.Length > 0 ? subtitle : "Yasser project")),
+                VideoPath = video,
+                SubtitlePath = subtitle,
+            };
+        }
+
+        project.VideoPath = video;
+        project.SubtitlePath = subtitle;
+        var rows = GetRows(vm);
+        if (rows != null && rows.Count > 0)
+        {
+            var oldCues = project.Cues.ToList();
+            var merged = new System.Collections.Generic.List<SubtitleCue>();
+            foreach (var row in rows.OfType<SubtitleLineViewModel>().Where(p => !p.IsReferenceOnly && p.EndTime > p.StartTime))
+            {
+                long start = (long)Math.Round(row.StartTime.TotalMilliseconds);
+                long end = (long)Math.Round(row.EndTime.TotalMilliseconds);
+                Guid id = row.Id == Guid.Empty ? StableId(start, end, row.Text ?? string.Empty) : row.Id;
+                var old = oldCues.FirstOrDefault(c => c.Id == id) ??
+                          oldCues.FirstOrDefault(c => c.StartMilliseconds == start && c.EndMilliseconds == end);
+                string rowText = row.Text ?? string.Empty;
+                if (old == null)
+                {
+                    merged.Add(new SubtitleCue
+                    {
+                        Id = id,
+                        StartMilliseconds = start,
+                        EndMilliseconds = end,
+                        SourceText = rowText,
+                    });
+                    continue;
+                }
+
+                old.Id = id;
+                old.StartMilliseconds = start;
+                old.EndMilliseconds = end;
+                if (!string.Equals(rowText, old.SourceText, StringComparison.Ordinal) &&
+                    !string.Equals(rowText, old.Translation, StringComparison.Ordinal))
+                {
+                    old.SourceText = rowText;
+                    old.Translation = string.Empty;
+                    old.ManuallyEdited = false;
+                }
+                merged.Add(old);
+            }
+            project.Cues = merged;
+            var ids = merged.Select(x => x.Id).ToHashSet();
+            project.Work.RemoveAll(w => w.Stage == WorkStage.Translation && w.CueId.HasValue && !ids.Contains(w.CueId.Value));
+        }
+
+        Store.Save(projectPath, project);
+        return projectPath;
+    }
+
+    internal static string ApplyProjectToEditor(MainViewModel vm)
+    {
+        string projectPath = SyncCurrentEditor(vm);
+        var project = Store.Load(projectPath);
+        var usable = project.Cues
+            .Where(c => !string.IsNullOrWhiteSpace(c.Translation) || !string.IsNullOrWhiteSpace(c.SourceText))
+            .OrderBy(c => c.StartMilliseconds)
+            .ToList();
+        if (usable.Count == 0) return "لا توجد سطور محفوظة في مشروع Yasser.";
+
+        var rows = GetRows(vm);
+        if (rows == null) return "تعذر الوصول إلى جدول الترجمة الحالي في Subtitle Edit.";
+
+        var existing = rows.OfType<SubtitleLineViewModel>().Where(p => !p.IsReferenceOnly).ToList();
+        if (existing.Count == 0)
+        {
+            foreach (var cue in usable)
+            {
+                string text = string.IsNullOrWhiteSpace(cue.Translation) ? cue.SourceText : cue.Translation;
+                var row = new SubtitleLineViewModel
+                {
+                    Id = cue.Id,
+                    Number = rows.Count + 1,
+                    StartTime = TimeSpan.FromMilliseconds(cue.StartMilliseconds),
+                    EndTime = TimeSpan.FromMilliseconds(cue.EndMilliseconds),
+                    Duration = TimeSpan.FromMilliseconds(cue.EndMilliseconds - cue.StartMilliseconds),
+                    Text = text,
+                };
+                rows.Add(row);
+            }
+            return $"تم إدخال {usable.Count} سطر من مشروع Yasser إلى جدول Subtitle Edit.";
+        }
+
+        int updated = 0;
+        foreach (var cue in usable)
+        {
+            var row = existing.FirstOrDefault(p => p.Id == cue.Id) ??
+                      existing.FirstOrDefault(p =>
+                          Math.Abs(p.StartTime.TotalMilliseconds - cue.StartMilliseconds) < 2 &&
+                          Math.Abs(p.EndTime.TotalMilliseconds - cue.EndMilliseconds) < 2);
+            if (row == null) continue;
+            string text = string.IsNullOrWhiteSpace(cue.Translation) ? cue.SourceText : cue.Translation;
+            if (!string.Equals(row.Text, text, StringComparison.Ordinal))
+            {
+                row.Text = text;
+                updated++;
+            }
+        }
+        return $"تم تحديث {updated} سطر داخل جدول Subtitle Edit.";
+    }
+
+    internal static string GetVideoPath(MainViewModel vm) =>
+        GetString(vm, "VideoFileName", "VideoFile", "CurrentVideoFileName");
+
+    private static IList? GetRows(MainViewModel vm)
+    {
+        var type = vm.GetType();
+        foreach (string name in new[] { "Subtitles", "SubtitleLines", "Paragraphs" })
+        {
+            if (type.GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(vm) is IList list)
+                return list;
+        }
+        foreach (string name in new[] { "_subtitles", "_subtitleLines", "_paragraphs" })
+        {
+            if (type.GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(vm) is IList list)
+                return list;
+        }
+        return null;
+    }
+
+    private static string GetString(object target, params string[] names)
+    {
+        var type = target.GetType();
+        foreach (string name in names)
+        {
+            var property = type.GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (property?.GetValue(target) is string text && !string.IsNullOrWhiteSpace(text)) return text;
+            var field = type.GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (field?.GetValue(target) is string fieldText && !string.IsNullOrWhiteSpace(fieldText)) return fieldText;
+        }
+        return string.Empty;
+    }
+
+    private static string GetProjectPath(string video, string subtitle)
+    {
+        string key = video.Length > 0 ? Path.GetFullPath(video) : subtitle.Length > 0 ? Path.GetFullPath(subtitle) : "untitled";
+        string hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key))).Substring(0, 20);
+        string root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "YasserSubtitleStudio", "IntegratedProjects");
+        Directory.CreateDirectory(root);
+        return Path.Combine(root, hash + ".yssproj");
+    }
+
+    private static Guid StableId(long start, long end, string text)
+    {
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{start}:{end}:{text}"));
+        return new Guid(hash.AsSpan(0, 16));
+    }
+}
+'@
+[System.IO.File]::WriteAllText((Join-Path $integrationDir 'YasserNativeBridge.cs'), $bridgeSource, [System.Text.UTF8Encoding]::new($false))
+
 $menuSource = @'
 using Avalonia.Controls;
 using Yasser.SubtitleDesktop;
@@ -59,13 +245,17 @@ namespace Nikse.SubtitleEdit.Features.Main;
 
 internal static class YasserIntegratedMenu
 {
-    internal static void Add(Menu hostMenu)
+    internal static void Add(Menu hostMenu, MainViewModel vm)
     {
         var yasser = new MenuItem { Header = "Yasser Subtitle Studio" };
-        var open = new MenuItem { Header = "فتح نافذة التفريغ والترجمة والاستئناف" };
+        var open = new MenuItem { Header = "فتح مشروع Yasser للفيديو الحالي" };
         open.Click += (_, _) =>
         {
+            string project = YasserNativeBridge.SyncCurrentEditor(vm);
             var tool = new Yasser.SubtitleDesktop.MainWindow();
+            SetInput(tool.Content, "ملف المشروع .yssproj", project);
+            string video = YasserNativeBridge.GetVideoPath(vm);
+            if (!string.IsNullOrWhiteSpace(video)) SetInput(tool.Content, "ملف الفيديو أو الصوت", video);
             if (AutomaticToolSetup.TryLocate(out var paths))
             {
                 SetInput(tool.Content, "المسار إلى whisper-cli.exe", paths.Whisper);
@@ -75,9 +265,23 @@ internal static class YasserIntegratedMenu
             }
             tool.Show();
         };
+        var apply = new MenuItem { Header = "تطبيق نتيجة Yasser على جدول Subtitle Edit" };
+        apply.Click += (_, _) =>
+        {
+            string message = YasserNativeBridge.ApplyProjectToEditor(vm);
+            var info = new Window
+            {
+                Title = "Yasser Subtitle Studio",
+                Width = 560,
+                Height = 150,
+                Content = new TextBlock { Text = message, Margin = new Avalonia.Thickness(20), TextWrapping = Avalonia.Media.TextWrapping.Wrap }
+            };
+            info.ShowDialog(vm.Window!);
+        };
         var setup = new MenuItem { Header = "تنزيل محرك التعرف على الصوت ومكوناته" };
         setup.Click += (_, _) => new AutomaticToolSetup().Show();
         yasser.Items.Add(open);
+        yasser.Items.Add(apply);
         yasser.Items.Add(setup);
         hostMenu.Items.Add(yasser);
     }
@@ -99,7 +303,7 @@ $projectFile = Join-Path $upstreamUI 'UI.csproj'
 # Avalonia XAML explicitly references assembly=SubtitleEdit; preserve the original assembly identity.
 Replace-Once $projectFile '<ProjectReference Include="..\libse\LibSE.csproj" />' ('<ProjectReference Include="..\libse\LibSE.csproj" />' + "`n`t  <ProjectReference Include=`"..\Yasser.ResumeCore\Yasser.ResumeCore.csproj`" />")
 $viewFile = Join-Path $upstreamUI 'Features/Main/MainView.cs'
-Replace-Once $viewFile 'InitMenu.Make(_vm);' ('InitMenu.Make(_vm);' + "`n        YasserIntegratedMenu.Add(_vm.Menu);")
+Replace-Once $viewFile 'InitMenu.Make(_vm);' ('InitMenu.Make(_vm);' + "`n        YasserIntegratedMenu.Add(_vm.Menu, _vm);")
 Write-Host "Building original Subtitle Edit revision $actual with original icon and Yasser project menu."
 & dotnet publish $projectFile --configuration Release --runtime $Runtime --self-contained true --output $publish
 Require ($LASTEXITCODE -eq 0) 'Original editor host build failed.'
