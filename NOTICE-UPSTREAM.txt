@@ -1,0 +1,7 @@
+Yasser Subtitle Studio builds on Subtitle Edit by the Subtitle Edit contributors.
+Original source: https://github.com/SubtitleEdit/subtitleedit
+Pinned source revision used for integration: 7398eb9d63769753960bb25326d4bae53971b55b
+The original Windows icon SE.ico comes from the original Subtitle Edit repository at src/ui/SE.ico.
+Subtitle Edit is distributed under the MIT License; its original copyright and license text are supplied separately as UPSTREAM-LICENSE.txt with any built integrated distribution.
+This modified application is a third-party build and is not an official Subtitle Edit release.
+Third-party engines, models and online translation services have their own licenses, availability, usage limits and privacy terms.
