@@ -7,7 +7,7 @@ using Yasser.ResumeCore;
 
 namespace Yasser.SubtitleDesktop;
 
-/// <summary>Independent desktop PREVIEW; upstream Subtitle Edit integration is still pending.</summary>
+/// <summary>Independent desktop preview. Not yet integrated into upstream Subtitle Edit.</summary>
 public sealed class MainWindow : Window
 {
     private readonly TextBox _media = new() { Watermark = "ملف الفيديو أو الصوت" };
@@ -138,19 +138,13 @@ public sealed class MainWindow : Window
         }
     }
 
+    private static string TimeLabel(long milliseconds) => TimeSpan.FromMilliseconds(milliseconds).ToString(@"hh\:mm\:ss");
+
     private void RefreshCaptions(SubtitleProject project)
     {
         _captions.ItemsSource = project.Cues.OrderBy(c => c.StartMilliseconds).Select(c =>
-            $"{TimeSpan.FromMilliseconds(c.StartMilliseconds):hh\:mm\:ss} [{c.SourceLanguageCode ?? "?"}] {c.SourceText}" +
+            $"{TimeLabel(c.StartMilliseconds)} [{c.SourceLanguageCode ?? "?"}] {c.SourceText}" +
             (string.IsNullOrWhiteSpace(c.Translation) ? "" : "\n   العربية: " + c.Translation)).ToArray();
-    }
-
-    private void SetProcessing(bool processing)
-    {
-        _start.IsEnabled = !processing; _translate.IsEnabled = !processing &&
-            File.Exists(_project.Text?.Trim()) && _store.Load(_project.Text!.Trim()).Cues.Count > 0;
-        _cancel.IsEnabled = processing; _export.IsEnabled = !processing && _export.IsEnabled;
-        _exportArabic.IsEnabled = !processing && _exportArabic.IsEnabled;
     }
 
     private async Task StartAsync()
@@ -189,7 +183,7 @@ public sealed class MainWindow : Window
             var result = await new AutoLanguageTranscriber(_store).RunAsync(projectFile, media, opts,
                 (chunk, language) => Dispatcher.UIThread.Post(() =>
                 {
-                    _message.Text = $"تم حفظ مقطع حتى {TimeSpan.FromMilliseconds(chunk.EndMilliseconds):hh\:mm\:ss} — اللغة: {language ?? "غير مؤكدة"}";
+                    _message.Text = $"تم حفظ مقطع حتى {TimeLabel(chunk.EndMilliseconds)} — اللغة: {language ?? "غير مؤكدة"}";
                     try { RefreshCaptions(_store.Load(projectFile)); }
                     catch (IOException) { /* Refresh on next checkpoint. */ }
                 }), token);
